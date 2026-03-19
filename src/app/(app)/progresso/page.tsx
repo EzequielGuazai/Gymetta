@@ -1,11 +1,11 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { WORKOUT_DAYS, getExerciseById } from '@/lib/workoutData'
+import { getExerciseById } from '@/lib/workoutData'
 import { formatDate, isoToday, totalVolume, getMaxWeight } from '@/lib/utils'
 import type { WorkoutLog, Measurement } from '@/types'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, CartesianGrid } from 'recharts'
-import { format, subDays, parseISO } from 'date-fns'
+import { format, subDays } from 'date-fns'
 import { Scale, TrendingUp, Dumbbell, Plus, X } from 'lucide-react'
 
 export default function ProgressoPage() {
@@ -14,49 +14,48 @@ export default function ProgressoPage() {
   const [userId, setUserId] = useState<string | null>(null)
   const [activeEx, setActiveEx] = useState<string>('a1_supino_barra')
   const [showAddMeas, setShowAddMeas] = useState(false)
-  const [newMeas, setNewMeas] = useState({ weight_kg: '', body_fat: '', notes: '' })
+  const [newMeas, setNewMeas] = useState({ weight_kg: '', body_fat: '' })
   const [saving, setSaving] = useState(false)
-  const supabase = createClient()
+  const [refresh, setRefresh] = useState(0)
 
-  const load = useCallback(async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    setUserId(user.id)
-    const [{ data: wl }, { data: ms }] = await Promise.all([
-      supabase.from('workout_logs').select('*').eq('user_id', user.id).order('date').limit(500),
-      supabase.from('measurements').select('*').eq('user_id', user.id).order('date').limit(100),
-    ])
-    if (wl) setLogs(wl)
-    if (ms) setMeasurements(ms)
-  }, [])
-
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    const supabase = createClient()
+    async function load() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      setUserId(user.id)
+      const [{ data: wl }, { data: ms }] = await Promise.all([
+        supabase.from('workout_logs').select('*').eq('user_id', user.id).order('date').limit(500),
+        supabase.from('measurements').select('*').eq('user_id', user.id).order('date').limit(100),
+      ])
+      if (wl) setLogs(wl as WorkoutLog[])
+      if (ms) setMeasurements(ms as Measurement[])
+    }
+    load()
+  }, [refresh])
 
   async function addMeasurement() {
     if (!userId) return
     setSaving(true)
+    const supabase = createClient()
     await supabase.from('measurements').insert({
-      user_id: userId,
-      date: isoToday(),
+      user_id: userId, date: isoToday(),
       weight_kg: parseFloat(newMeas.weight_kg) || null,
       body_fat: parseFloat(newMeas.body_fat) || null,
-      notes: newMeas.notes || null,
     })
-    setNewMeas({ weight_kg: '', body_fat: '', notes: '' })
+    setNewMeas({ weight_kg: '', body_fat: '' })
     setShowAddMeas(false)
     setSaving(false)
-    load()
+    setRefresh(r => r + 1)
   }
 
-  // Exercise progress chart data
   const exLogs = logs.filter(l => l.exercise_id === activeEx)
   const exChartData = exLogs.map(l => ({
-    date: format(parseISO(l.date), 'dd/MM'),
+    date: format(new Date(l.date + 'T00:00:00'), 'dd/MM'),
     max: getMaxWeight([l]),
     vol: totalVolume(l.sets),
   }))
 
-  // Weekly volume
   const last12Weeks = [...Array(12)].map((_, i) => {
     const start = format(subDays(new Date(), (11 - i) * 7 + 6), 'yyyy-MM-dd')
     const end = format(subDays(new Date(), (11 - i) * 7), 'yyyy-MM-dd')
@@ -64,7 +63,6 @@ export default function ProgressoPage() {
     return { week: `S${i + 1}`, vol: Math.round(vol) }
   })
 
-  // All exercises with logged data
   const loggedExercises = [...new Set(logs.map(l => l.exercise_id))].map(id => ({
     id, name: getExerciseById(id)?.name ?? id,
     count: logs.filter(l => l.exercise_id === id).length,
@@ -72,7 +70,7 @@ export default function ProgressoPage() {
   }))
 
   const weightData = measurements.filter(m => m.weight_kg).map(m => ({
-    date: format(parseISO(m.date), 'dd/MM'),
+    date: format(new Date(m.date + 'T00:00:00'), 'dd/MM'),
     kg: m.weight_kg,
   }))
 
@@ -80,7 +78,6 @@ export default function ProgressoPage() {
     <div className="p-4 md:p-6 max-w-3xl space-y-5">
       <h1 className="text-xl font-bold">Progresso</h1>
 
-      {/* Weight */}
       <section className="card p-4">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
@@ -132,7 +129,6 @@ export default function ProgressoPage() {
             Adiciona medições para ver o gráfico de peso
           </div>
         )}
-
         {measurements.length > 0 && (
           <div className="mt-3 space-y-1">
             {measurements.slice(-5).reverse().map(m => (
@@ -148,7 +144,6 @@ export default function ProgressoPage() {
         )}
       </section>
 
-      {/* Volume semana */}
       <section className="card p-4">
         <div className="flex items-center gap-2 mb-4">
           <TrendingUp size={16} className="text-accent" />
@@ -160,11 +155,11 @@ export default function ProgressoPage() {
               <CartesianGrid strokeDasharray="3 3" stroke="#252525" />
               <XAxis dataKey="week" tick={{ fontSize: 10, fill: '#555' }} />
               <YAxis tick={{ fontSize: 10, fill: '#555' }} width={40}
-                tickFormatter={v => v > 1000 ? `${Math.round(v/1000)}k` : v.toString()} />
+                tickFormatter={(v: number) => v > 1000 ? `${Math.round(v / 1000)}k` : String(v)} />
               <Tooltip contentStyle={{ background: '#1c1c1c', border: '1px solid #303030', borderRadius: 6, fontSize: 12 }}
                 labelStyle={{ color: '#999' }} itemStyle={{ color: '#22c55e' }}
                 formatter={(v: number) => [`${v.toLocaleString()} kg`, 'Volume']} />
-              <Bar dataKey="vol" fill="#22c55e" opacity={0.8} radius={[3,3,0,0]} />
+              <Bar dataKey="vol" fill="#22c55e" opacity={0.8} radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         ) : (
@@ -174,24 +169,21 @@ export default function ProgressoPage() {
         )}
       </section>
 
-      {/* Exercise progress */}
       {loggedExercises.length > 0 && (
         <section className="card p-4">
           <div className="flex items-center gap-2 mb-3">
             <Dumbbell size={16} className="text-accent-2" />
             <p className="text-sm font-semibold">Evolução por exercício</p>
           </div>
-
-          <div className="flex gap-1.5 overflow-x-auto pb-2 mb-4 scrollbar-none">
+          <div className="flex gap-1.5 overflow-x-auto pb-2 mb-4" style={{ scrollbarWidth: 'none' }}>
             {loggedExercises.map(ex => (
               <button key={ex.id} onClick={() => setActiveEx(ex.id)}
                 className={`text-xs px-3 py-1.5 rounded-sm border whitespace-nowrap transition-colors flex-shrink-0
                   ${activeEx === ex.id ? 'bg-accent-bg border-accent-dim text-accent' : 'border-border text-txt-2 hover:border-border-2'}`}>
-                {ex.name.split(' ').slice(0,3).join(' ')}
+                {ex.name.split(' ').slice(0, 3).join(' ')}
               </button>
             ))}
           </div>
-
           {exChartData.length > 1 ? (
             <ResponsiveContainer width="100%" height={160}>
               <LineChart data={exChartData}>
@@ -209,13 +201,11 @@ export default function ProgressoPage() {
               Regista mais treinos para ver a evolução
             </div>
           )}
-
-          {/* Exercise history */}
           <div className="mt-3 space-y-1 max-h-48 overflow-y-auto">
             {exLogs.slice().reverse().slice(0, 10).map(l => (
               <div key={l.id} className="flex justify-between text-xs py-1.5 border-b border-border last:border-0">
                 <span className="text-txt-3">{formatDate(l.date)}</span>
-                <span className="font-mono text-txt-2">{l.sets.map((s,i) => `${s.weight}×${s.reps}`).join(' · ')}</span>
+                <span className="font-mono text-txt-2">{l.sets.map(s => `${s.weight}×${s.reps}`).join(' · ')}</span>
               </div>
             ))}
           </div>

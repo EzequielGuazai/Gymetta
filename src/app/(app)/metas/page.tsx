@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { ALL_EXERCISES, getExerciseById } from '@/lib/workoutData'
 import { getMaxWeight, getProgressPercent, formatDate } from '@/lib/utils'
@@ -13,25 +13,28 @@ export default function MetasPage() {
   const [showAdd, setShowAdd] = useState(false)
   const [form, setForm] = useState({ exercise_id: 'a1_supino_barra', target_weight: '', target_date: '' })
   const [saving, setSaving] = useState(false)
-  const supabase = createClient()
+  const [refresh, setRefresh] = useState(0)
 
-  const load = useCallback(async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    setUserId(user.id)
-    const [{ data: gl }, { data: wl }] = await Promise.all([
-      supabase.from('goals').select('*').eq('user_id', user.id).order('created_at'),
-      supabase.from('workout_logs').select('*').eq('user_id', user.id).limit(500),
-    ])
-    if (gl) setGoals(gl)
-    if (wl) setLogs(wl)
-  }, [])
-
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    const supabase = createClient()
+    async function load() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      setUserId(user.id)
+      const [{ data: gl }, { data: wl }] = await Promise.all([
+        supabase.from('goals').select('*').eq('user_id', user.id).order('created_at'),
+        supabase.from('workout_logs').select('*').eq('user_id', user.id).limit(500),
+      ])
+      if (gl) setGoals(gl as Goal[])
+      if (wl) setLogs(wl as WorkoutLog[])
+    }
+    load()
+  }, [refresh])
 
   async function addGoal() {
     if (!userId || !form.target_weight) return
     setSaving(true)
+    const supabase = createClient()
     await supabase.from('goals').insert({
       user_id: userId,
       exercise_id: form.exercise_id,
@@ -41,23 +44,25 @@ export default function MetasPage() {
     setShowAdd(false)
     setForm({ exercise_id: 'a1_supino_barra', target_weight: '', target_date: '' })
     setSaving(false)
-    load()
+    setRefresh(r => r + 1)
   }
 
   async function deleteGoal(id: string) {
+    const supabase = createClient()
     await supabase.from('goals').delete().eq('id', id)
-    load()
+    setRefresh(r => r + 1)
   }
 
   async function markAchieved(id: string) {
+    const supabase = createClient()
     await supabase.from('goals').update({ achieved_at: new Date().toISOString() }).eq('id', id)
-    load()
+    setRefresh(r => r + 1)
   }
 
-  const getStatus = (goal: Goal) => {
+  function getStatus(goal: Goal) {
     const exLogs = logs.filter(l => l.exercise_id === goal.exercise_id)
     const currentMax = getMaxWeight(exLogs)
-    const startWeight = exLogs.length > 0 ? exLogs[0]?.sets[0]?.weight ?? 0 : 0
+    const startWeight = exLogs.length > 0 ? (exLogs[0]?.sets[0]?.weight ?? 0) : 0
     const pct = getProgressPercent(currentMax, goal.target_weight, startWeight)
     const daysLeft = goal.target_date
       ? Math.ceil((new Date(goal.target_date).getTime() - Date.now()) / 86400000)
@@ -77,7 +82,6 @@ export default function MetasPage() {
         </button>
       </div>
 
-      {/* Add form */}
       {showAdd && (
         <div className="card p-4 border-accent-dim">
           <div className="flex items-center justify-between mb-3">
@@ -87,7 +91,7 @@ export default function MetasPage() {
           <div className="space-y-3">
             <div>
               <label className="label block mb-1">Exercício</label>
-              <select className="input text-sm"
+              <select className="input text-sm bg-bg-3"
                 value={form.exercise_id} onChange={e => setForm(p => ({ ...p, exercise_id: e.target.value }))}>
                 {ALL_EXERCISES.map(ex => (
                   <option key={ex.id} value={ex.id}>{ex.name}</option>
@@ -98,11 +102,10 @@ export default function MetasPage() {
               <div>
                 <label className="label block mb-1">Carga alvo (kg)</label>
                 <input className="input text-sm" type="number" step="0.5"
-                  value={form.target_weight} onChange={e => setForm(p => ({ ...p, target_weight: e.target.value }))}
-                  placeholder="ex: 100" />
+                  value={form.target_weight} onChange={e => setForm(p => ({ ...p, target_weight: e.target.value }))} placeholder="100" />
               </div>
               <div>
-                <label className="label block mb-1">Data limite (opcional)</label>
+                <label className="label block mb-1">Data limite</label>
                 <input className="input text-sm" type="date"
                   value={form.target_date} onChange={e => setForm(p => ({ ...p, target_date: e.target.value }))} />
               </div>
@@ -114,7 +117,6 @@ export default function MetasPage() {
         </div>
       )}
 
-      {/* Active goals */}
       {active.length > 0 ? (
         <section>
           <p className="label mb-2">Metas ativas</p>
@@ -140,8 +142,8 @@ export default function MetasPage() {
                     </div>
                     <div className="flex gap-1.5">
                       {pct >= 100 && (
-                        <button onClick={() => markAchieved(goal.id)} title="Marcar como atingido"
-                          className="text-accent hover:text-black hover:bg-accent p-1.5 rounded transition-colors">
+                        <button onClick={() => markAchieved(goal.id)}
+                          className="text-accent hover:bg-accent hover:text-black p-1.5 rounded transition-colors">
                           <Check size={14} />
                         </button>
                       )}
@@ -151,7 +153,6 @@ export default function MetasPage() {
                     </div>
                   </div>
 
-                  {/* Progress */}
                   <div className="flex items-center gap-2 mb-2">
                     <div className="flex-1 h-2 bg-bg-4 rounded-full overflow-hidden">
                       <div className="h-full rounded-full transition-all duration-700"
@@ -168,15 +169,14 @@ export default function MetasPage() {
                     <span>Falta: {currentMax < goal.target_weight ? `${(goal.target_weight - currentMax).toFixed(1)} kg` : '✓'}</span>
                   </div>
 
-                  {/* Sugestão se atrasado */}
                   {isOverdue && currentMax < goal.target_weight && (
                     <div className="mt-3 p-2 rounded bg-accent-redbg border border-red-900 text-xs text-red-400">
-                      Meta em atraso. Tenta aumentar 2.5kg esta semana e sê consistente nos treinos.
+                      Meta em atraso. Tenta aumentar 2.5 kg esta semana e sê consistente nos treinos.
                     </div>
                   )}
-                  {isNearDeadline && currentMax < goal.target_weight && (
+                  {isNearDeadline && !isOverdue && currentMax < goal.target_weight && (
                     <div className="mt-3 p-2 rounded bg-accent-2bg border border-amber-800 text-xs text-amber-500">
-                      Faltam {daysLeft} dias. Precisas de {((goal.target_weight - currentMax) / Math.max(1, daysLeft / 7)).toFixed(1)} kg/semana.
+                      Faltam {daysLeft} dias. Precisas de {((goal.target_weight - currentMax) / Math.max(1, (daysLeft ?? 7) / 7)).toFixed(1)} kg/semana.
                     </div>
                   )}
                 </div>
@@ -193,7 +193,6 @@ export default function MetasPage() {
         </div>
       )}
 
-      {/* Achieved */}
       {achieved.length > 0 && (
         <section>
           <p className="label mb-2">Conquistadas 🏆</p>
@@ -205,7 +204,9 @@ export default function MetasPage() {
                   <Trophy size={16} className="text-accent flex-shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium">{ex?.name}</p>
-                    <p className="text-xs text-accent">{goal.target_weight} kg atingido · {formatDate(goal.achieved_at!)}</p>
+                    <p className="text-xs text-accent">
+                      {goal.target_weight} kg atingido · {formatDate(goal.achieved_at!.split('T')[0])}
+                    </p>
                   </div>
                   <button onClick={() => deleteGoal(goal.id)} className="text-txt-3 hover:text-accent-red p-1">
                     <X size={13} />

@@ -1,6 +1,6 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
-import { format, parseISO, isToday, isYesterday, differenceInDays } from 'date-fns'
+import { format, isToday, isYesterday, differenceInDays } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import type { WorkoutLog } from '@/types'
 
@@ -9,7 +9,7 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function formatDate(date: string | Date) {
-  const d = typeof date === 'string' ? parseISO(date) : date
+  const d = typeof date === 'string' ? new Date(date + 'T00:00:00') : date
   if (isToday(d)) return 'Hoje'
   if (isYesterday(d)) return 'Ontem'
   return format(d, "d 'de' MMM", { locale: ptBR })
@@ -19,35 +19,37 @@ export function isoToday() {
   return format(new Date(), 'yyyy-MM-dd')
 }
 
-export function computeStreak(logs: WorkoutLog[], scheduledDays: string[]): number {
+export function computeStreak(logs: WorkoutLog[]): number {
   if (logs.length === 0) return 0
-  const dates = [...new Set(logs.map(l => l.date))].sort().reverse()
+  const SCHEDULED_JS_DAYS = [1, 2, 4, 5] // Mon, Tue, Thu, Fri
+  const loggedDates = new Set(logs.map(l => l.date))
   let streak = 0
-  let checkDate = new Date()
+  const today = new Date()
 
   for (let i = 0; i < 90; i++) {
-    const ds = format(checkDate, 'yyyy-MM-dd')
-    const dow = format(checkDate, 'EEEEEE', { locale: ptBR }).toLowerCase()
-    const isScheduled = scheduledDays.includes(dow) || scheduledDays.includes(checkDate.getDay().toString())
+    const d = new Date(today)
+    d.setDate(today.getDate() - i)
+    const dow = d.getDay()
+    const ds = format(d, 'yyyy-MM-dd')
 
-    if (isScheduled) {
-      if (dates.includes(ds)) {
-        streak++
-      } else if (differenceInDays(new Date(), checkDate) > 0) {
-        break
-      }
+    if (!SCHEDULED_JS_DAYS.includes(dow)) continue
+
+    if (loggedDates.has(ds)) {
+      streak++
+    } else if (differenceInDays(today, d) > 0) {
+      break
     }
-    checkDate.setDate(checkDate.getDate() - 1)
   }
   return streak
 }
 
 export function totalVolume(sets: WorkoutLog['sets']): number {
-  return sets.reduce((acc, s) => acc + s.weight * s.reps, 0)
+  return sets.reduce((acc, s) => acc + (s.weight || 0) * (s.reps || 0), 0)
 }
 
 export function getMaxWeight(logs: WorkoutLog[]): number {
-  return Math.max(0, ...logs.flatMap(l => l.sets.map(s => s.weight)))
+  const all = logs.flatMap(l => l.sets.map(s => s.weight || 0))
+  return all.length > 0 ? Math.max(0, ...all) : 0
 }
 
 export function getBmi(weight: number, height: number): number {
@@ -61,5 +63,5 @@ export function getProgressPercent(current: number, target: number, start: numbe
 }
 
 export function avatarInitials(name: string): string {
-  return name.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase()
+  return name.split(' ').slice(0, 2).map(n => n[0] ?? '').join('').toUpperCase() || '?'
 }

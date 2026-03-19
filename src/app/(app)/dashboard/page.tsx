@@ -1,38 +1,36 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { formatDate, isoToday, computeStreak, totalVolume } from '@/lib/utils'
 import { WORKOUT_DAYS, WEEK_SCHEDULE, JS_DAY_TO_KEY } from '@/lib/workoutData'
 import type { Profile, WorkoutLog, Measurement } from '@/types'
 import Link from 'next/link'
-import { format, subDays, parseISO } from 'date-fns'
-import {
-  Flame, TrendingUp, Calendar, Zap, ChevronRight,
-  Dumbbell, Scale, AlertCircle, CheckCircle2, Clock
-} from 'lucide-react'
+import { format, subDays } from 'date-fns'
+import { Flame, TrendingUp, Calendar, Zap, ChevronRight, Dumbbell, Scale, AlertCircle, CheckCircle2 } from 'lucide-react'
 
 export default function DashboardPage() {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [logs, setLogs] = useState<WorkoutLog[]>([])
   const [measurements, setMeasurements] = useState<Measurement[]>([])
   const [loading, setLoading] = useState(true)
-  const supabase = createClient()
 
-  const load = useCallback(async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    const [{ data: prof }, { data: wlogs }, { data: meas }] = await Promise.all([
-      supabase.from('profiles').select('*').eq('id', user.id).single(),
-      supabase.from('workout_logs').select('*').eq('user_id', user.id).order('date', { ascending: false }).limit(200),
-      supabase.from('measurements').select('*').eq('user_id', user.id).order('date', { ascending: false }).limit(30),
-    ])
-    if (prof) setProfile(prof)
-    if (wlogs) setLogs(wlogs)
-    if (meas) setMeasurements(meas)
-    setLoading(false)
+  useEffect(() => {
+    const supabase = createClient()
+    async function load() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const [{ data: prof }, { data: wlogs }, { data: meas }] = await Promise.all([
+        supabase.from('profiles').select('*').eq('id', user.id).single(),
+        supabase.from('workout_logs').select('*').eq('user_id', user.id).order('date', { ascending: false }).limit(200),
+        supabase.from('measurements').select('*').eq('user_id', user.id).order('date', { ascending: false }).limit(30),
+      ])
+      if (prof) setProfile(prof as Profile)
+      if (wlogs) setLogs(wlogs as WorkoutLog[])
+      if (meas) setMeasurements(meas as Measurement[])
+      setLoading(false)
+    }
+    load()
   }, [])
-
-  useEffect(() => { load() }, [load])
 
   if (loading) return <PageLoader />
 
@@ -44,22 +42,19 @@ export default function DashboardPage() {
     ? WORKOUT_DAYS[todayWorkout]?.exercises.every(ex => todayLogs.some(l => l.exercise_id === ex.id))
     : false
 
-  const streak = computeStreak(logs, ['seg','ter','qui','sex'])
+  const streak = computeStreak(logs)
+
   const weekStart = format(subDays(new Date(), 6), 'yyyy-MM-dd')
   const weekLogs = logs.filter(l => l.date >= weekStart)
-  const weekDays = ['seg','ter','qui','sex'].filter(d => {
-    const date = [...Array(7)].map((_,i) => format(subDays(new Date(), i), 'yyyy-MM-dd'))
-    return date.some(d2 => weekLogs.some(l => l.date === d2))
-  })
+  const weekSessionDates = new Set(weekLogs.map(l => l.date))
   const weekVolume = weekLogs.reduce((acc, l) => acc + totalVolume(l.sets), 0)
 
   const last7Dates = [...Array(7)].map((_, i) => format(subDays(new Date(), i), 'yyyy-MM-dd')).reverse()
   const missed = last7Dates.filter(d => {
-    const dow = JS_DAY_TO_KEY[parseISO(d).getDay()]
+    const dow = JS_DAY_TO_KEY[new Date(d + 'T00:00:00').getDay()]
     const scheduled = WEEK_SCHEDULE[dow]
     if (!scheduled) return false
-    const hadLog = logs.some(l => l.date === d)
-    return !hadLog && d < today
+    return !logs.some(l => l.date === d) && d < today
   })
 
   const recentWeight = measurements[0]?.weight_kg
@@ -68,14 +63,9 @@ export default function DashboardPage() {
 
   return (
     <div className="p-4 md:p-6 max-w-3xl">
-      {/* Header */}
       <div className="mb-6">
-        <p className="text-xs text-txt-3 uppercase tracking-widest mb-1">
-          {formatDate(new Date())}
-        </p>
-        <h1 className="text-xl font-bold">
-          Olá{profile?.name ? `, ${profile.name.split(' ')[0]}` : ''}! 👋
-        </h1>
+        <p className="text-xs text-txt-3 uppercase tracking-widest mb-1">{formatDate(new Date())}</p>
+        <h1 className="text-xl font-bold">Olá{profile?.name ? `, ${profile.name.split(' ')[0]}` : ''}! 👋</h1>
         <p className="text-sm text-txt-2 mt-1">
           {todayWorkout
             ? todayComplete
@@ -85,7 +75,6 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      {/* Today card */}
       {todayWorkout && (
         <Link href="/treino" className="block card p-4 mb-4 border-accent-dim hover:border-accent transition-colors group">
           <div className="flex items-center justify-between">
@@ -105,17 +94,15 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {!todayComplete && (
-                <span className="badge-green">Iniciar</span>
-              )}
+              {!todayComplete && <span className="badge-green">Iniciar</span>}
               <ChevronRight size={16} className="text-txt-3 group-hover:text-accent transition-colors" />
             </div>
           </div>
           {!todayComplete && todayLogs.length > 0 && (
             <div className="mt-3">
-              <div className="flex justify-between text-xs text-txt-3 mb-1">
-                <span>Progresso de hoje</span>
-                <span>{Math.round(todayLogs.length / WORKOUT_DAYS[todayWorkout].exercises.length * 100)}%</span>
+              <div className="flex justify-between text-xs mb-1">
+                <span className="text-txt-2">Progresso de hoje</span>
+                <span className="text-txt-3">{Math.round(todayLogs.length / WORKOUT_DAYS[todayWorkout].exercises.length * 100)}%</span>
               </div>
               <div className="h-1.5 bg-bg-4 rounded-full overflow-hidden">
                 <div className="h-full bg-accent rounded-full transition-all"
@@ -126,16 +113,16 @@ export default function DashboardPage() {
         </Link>
       )}
 
-      {/* Stats grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
         <StatCard icon={<Flame size={16} className="text-orange-400" />} label="Sequência" value={`${streak}`} sub="dias" />
-        <StatCard icon={<Calendar size={16} className="text-accent" />} label="Esta semana" value={`${weekDays.length}/4`} sub="treinos" />
-        <StatCard icon={<Zap size={16} className="text-accent-2" />} label="Volume semana" value={weekVolume > 0 ? `${Math.round(weekVolume/1000)}k` : '—'} sub="kg total" />
+        <StatCard icon={<Calendar size={16} className="text-accent" />} label="Esta semana" value={`${weekSessionDates.size}/4`} sub="treinos" />
+        <StatCard icon={<Zap size={16} className="text-accent-2" />} label="Volume semana"
+          value={weekVolume > 0 ? `${Math.round(weekVolume / 1000)}k` : '—'} sub="kg total" />
         <StatCard icon={<Scale size={16} className="text-accent-3" />} label="Peso atual"
-          value={recentWeight ? `${recentWeight}` : '—'} sub={weightDiff ? `${weightDiff > 0 ? '+' : ''}${weightDiff} kg` : 'kg'} />
+          value={recentWeight ? `${recentWeight}` : '—'}
+          sub={weightDiff !== null ? `${weightDiff > 0 ? '+' : ''}${weightDiff} kg` : 'kg'} />
       </div>
 
-      {/* Missed days alert */}
       {missed.length > 0 && (
         <div className="card p-3 mb-4 border-amber-800 bg-accent-2bg flex items-start gap-3">
           <AlertCircle size={16} className="text-accent-2 mt-0.5 flex-shrink-0" />
@@ -150,12 +137,11 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Last 7 days timeline */}
       <div className="card p-4 mb-4">
         <p className="text-xs text-txt-3 uppercase tracking-widest mb-3">Últimos 7 dias</p>
         <div className="flex gap-1.5">
           {last7Dates.map(date => {
-            const dow = JS_DAY_TO_KEY[parseISO(date).getDay()]
+            const dow = JS_DAY_TO_KEY[new Date(date + 'T00:00:00').getDay()]
             const scheduled = WEEK_SCHEDULE[dow]
             const hasLog = logs.some(l => l.date === date)
             const isT = date === today
@@ -167,15 +153,16 @@ export default function DashboardPage() {
                   ${hasLog ? 'bg-accent text-black' : scheduled && !isFuture ? 'bg-accent-redbg text-accent-red' : 'bg-bg-3 text-txt-3'}`}>
                   {hasLog ? '✓' : scheduled && !isFuture ? '✗' : '·'}
                 </div>
-                <span className="text-[9px] text-txt-3">{['D','S','T','Q','Q','S','S'][parseISO(date).getDay()]}</span>
+                <span className="text-[9px] text-txt-3">
+                  {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'][new Date(date + 'T00:00:00').getDay()]}
+                </span>
               </div>
             )
           })}
         </div>
       </div>
 
-      {/* Recent logs */}
-      {logs.length > 0 && (
+      {logs.length > 0 ? (
         <div className="card p-4">
           <div className="flex items-center justify-between mb-3">
             <p className="text-xs text-txt-3 uppercase tracking-widest">Atividade recente</p>
@@ -202,9 +189,7 @@ export default function DashboardPage() {
             })}
           </div>
         </div>
-      )}
-
-      {logs.length === 0 && (
+      ) : (
         <div className="card p-8 text-center">
           <Dumbbell size={32} className="text-txt-3 mx-auto mb-3" />
           <p className="text-sm font-medium mb-1">Primeiro treino!</p>
