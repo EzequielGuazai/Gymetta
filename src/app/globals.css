@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+  
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #303030; border-radius: 99px; }
+
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type='number'] { -moz-appearance: textfield; }
+}
+
+@layer components {
+  .card {
+    @apply bg-bg-2 border border-border rounded-lg;
+  }
+  .card-inner {
+    @apply bg-bg-3 border border-border rounded;
+  }
+  .btn-primary {
+    @apply bg-accent text-black font-semibold text-sm px-4 py-2 rounded-sm
+           hover:bg-accent-dim transition-colors active:scale-[0.98] cursor-pointer
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-ghost {
+    @apply bg-transparent border border-border-2 text-txt-2 text-sm px-4 py-2 rounded-sm
+           hover:border-border-3 hover:text-txt transition-colors active:scale-[0.98] cursor-pointer;
+  }
+  .btn-danger {
+    @apply bg-transparent border border-accent-red text-accent-red text-sm px-3 py-1.5 rounded-sm
+           hover:bg-accent-redbg transition-colors cursor-pointer;
+  }
+  .input {
+    @apply bg-bg-3 border border-border-2 rounded-sm px-3 py-2 text-sm text-txt
+           placeholder:text-txt-3 outline-none focus:border-accent transition-colors w-full
+           font-mono;
+  }
+  .label {
+    @apply text-xs text-txt-3 uppercase tracking-widest font-medium;
+  }
+  .badge-green {
+    @apply text-[10px] font-semibold px-2 py-0.5 rounded-full bg-accent-bg text-accent border border-accent-dim uppercase tracking-wide;
+  }
+  .badge-amber {
+    @apply text-[10px] font-semibold px-2 py-0.5 rounded-full bg-accent-2bg text-accent-2 border border-amber-800 uppercase tracking-wide;
+  }
+  .badge-blue {
+    @apply text-[10px] font-semibold px-2 py-0.5 rounded-full bg-accent-3bg text-accent-3 border border-blue-800 uppercase tracking-wide;
+  }
+}
